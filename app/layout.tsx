@@ -1,7 +1,7 @@
 // app/layout.tsx
 import type { Metadata } from "next";
 import "./globals.css";
-import { Toaster } from 'react-hot-toast';
+import { Toaster } from '@/components/ui/sonner'
 
 import { Geist, Geist_Mono } from "next/font/google";
 import { Francois_One, Inter, Poppins } from "next/font/google";
@@ -41,16 +41,16 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <div >
+    <div>
       <html
         lang="en"
         className={`${geistSans.variable} ${geistMono.variable} ${francois.variable} ${inter.variable} ${poppins.variable}`}
       >
         <body className="font-poppins antialiased text-gray-900 bg-white">
           {children}
-          <Toaster position="top-center" />
+          <Toaster />
         </body>
       </html>
     </div>
-  );
+  )
 }

@@ -1,150 +1,174 @@
-"use client";
+'use client'
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
-import dynamic from "next/dynamic";
-import { Input } from "@/components/ui/input";
-import { Button } from "@/components/ui/button";
-import Image from "next/image";
+import { useRouter } from 'next/navigation'
+import Image from 'next/image'
+import { z } from 'zod'
+import { useForm } from 'react-hook-form'
+import { zodResolver } from '@hookform/resolvers/zod'
 
-/* ✅ Disable SSR for reCAPTCHA */
-const ReCAPTCHA = dynamic(
-  () => import("react-google-recaptcha"),
-  { ssr: false }
-);
+import {
+  Card,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+  CardContent,
+  CardFooter,
+} from '@/components/ui/card'
+import { Input } from '@/components/ui/input'
+import { Button } from '@/components/ui/button'
+import {
+  Form,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormControl,
+  FormMessage,
+} from '@/components/ui/form'
 
-type LoginData = {
-  identifier: string;
-};
+/* -------------------------------------------------------------------------- */
+/*                               ZOD SCHEMA                                   */
+/* -------------------------------------------------------------------------- */
+const LoginSchema = z.object({
+  identifier: z.string().min(3, 'Please enter Membership No, Email, or Mobile'),
+})
 
-const LOGIN_STORAGE_KEY = "mock_login_user";
+type LoginValues = z.infer<typeof LoginSchema>
 
-/* ✅ Dummy allowed users */
-const DUMMY_USERS = [
-  "USI12345",
-  "demo@usi.com",
-  "9876543210",
-];
+/* -------------------------------------------------------------------------- */
+/*                       IDENTIFIER → API PAYLOAD                              */
+/* -------------------------------------------------------------------------- */
+const buildLoginPayload = (identifier: string) => {
+  // Mobile (10 digits)
+  if (/^\d{10}$/.test(identifier)) {
+    return { mobile: identifier }
+  }
+
+  // Email
+  if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(identifier)) {
+    return { email: identifier }
+  }
+
+  // Membership Number (fallback)
+  return { membershipNumber: identifier }
+}
 
 export default function LoginForm() {
-  const router = useRouter();
-  const [form, setForm] = useState<LoginData>({ identifier: "" });
-  const [error, setError] = useState<string | null>(null);
-  const [captchaValue, setCaptchaValue] = useState<string | null>(null);
+  const router = useRouter()
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
+  const form = useForm<LoginValues>({
+    resolver: zodResolver(LoginSchema),
+    defaultValues: {
+      identifier: '',
+    },
+  })
 
-    if (!form.identifier.trim()) {
-      setError("Please enter Membership No, Email, or Mobile No.");
-      return;
+  /* -------------------------------------------------------------------------- */
+  /*                                 SUBMIT                                     */
+  /* -------------------------------------------------------------------------- */
+  const onSubmit = async (values: LoginValues) => {
+    try {
+      const payload = buildLoginPayload(values.identifier)
+
+      const res = await fetch(
+        `${process.env.NEXT_PUBLIC_API_URL}/api/users/login`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          credentials: 'include', // ✅ REQUIRED for refresh token cookie
+          body: JSON.stringify(payload),
+        }
+      )
+
+      const data = await res.json()
+
+      if (!res.ok) {
+        throw new Error(data.message || 'Login failed')
+      }
+
+      /* ✅ Store access token + user */
+      localStorage.setItem('accessToken', data.accessToken)
+      localStorage.setItem('user', JSON.stringify(data.user))
+
+      router.push('/dashboard')
+    } catch (error: any) {
+      form.setError('identifier', {
+        message: error.message || 'Unable to login',
+      })
     }
-
-    if (!captchaValue) {
-      setError("Please verify the captcha.");
-      return;
-    }
-
-    /* ✅ Dummy login validation */
-    if (!DUMMY_USERS.includes(form.identifier.trim())) {
-      setError("Invalid login credentials.");
-      return;
-    }
-
-    setError(null);
-
-    const loginData = {
-      identifier: form.identifier,
-      isLoggedIn: true,
-      loginTime: new Date().toISOString(),
-    };
-
-    localStorage.setItem(
-      LOGIN_STORAGE_KEY,
-      JSON.stringify(loginData)
-    );
-
-    alert("Login successful! (Dummy user)");
-    router.push("/dashboard");
-  };
+  }
 
   return (
-    <div className="flex flex-col md:flex-row w-full max-w-3xl mx-auto bg-white rounded-2xl shadow-lg overflow-hidden">
-      
-      {/* LEFT – FORM */}
-      <div className="w-full md:w-1/2 p-6 md:p-10 bg-[#f0faff] flex items-center">
-        <form
-          onSubmit={handleSubmit}
-          className="w-full max-w-md mx-auto space-y-4 px-2 font-poppins"
-        >
-          <h1 className="text-2xl font-bold text-[#0d47a1]">
-            Login
-          </h1>
+    <div>
+      <Card className="w-full max-w-4xl grid md:grid-cols-2 overflow-hidden rounded-2xl shadow-xl">
+        {/* LEFT – FORM */}
+        <div className="p-6 md:p-10">
+          <CardHeader className="px-0">
+            <CardTitle className="text-2xl text-orange-700">Login</CardTitle>
+            <CardDescription>
+              Login using Membership No, Email, or Mobile Number
+            </CardDescription>
+          </CardHeader>
 
-          <p className="text-sm text-gray-700">
-            Search by USI membership number, registered email or phone number.
-          </p>
+          <CardContent className="px-0">
+            <Form {...form}>
+              <form
+                onSubmit={form.handleSubmit(onSubmit)}
+                className="space-y-4"
+              >
+                <FormField
+                  control={form.control}
+                  name="identifier"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Membership / Email / Mobile</FormLabel>
+                      <FormControl>
+                        <Input
+                          placeholder="Enter Membership No, Email or Mobile"
+                          {...field}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
 
-          {/* Identifier */}
-          <Input
-            id="identifier"
-            type="text"
-            placeholder="Enter Membership No, Email id or Mobile No"
-            value={form.identifier}
-            onChange={(e) =>
-              setForm({ identifier: e.target.value })
-            }
-          />
+                <Button
+                  type="submit"
+                  className="w-full bg-orange-600 hover:bg-orange-700"
+                  disabled={form.formState.isSubmitting}
+                >
+                  {form.formState.isSubmitting ? 'Logging in...' : 'Login'}
+                </Button>
+              </form>
+            </Form>
+          </CardContent>
 
-          {/* reCAPTCHA */}
-          <div className="pt-2">
-            <ReCAPTCHA
-              sitekey="6LfBXC8sAAAAAEUGOUN8B2XkFsov-bLIQoYzYLIf"
-              onChange={(value) => setCaptchaValue(value)}
-              onExpired={() => setCaptchaValue(null)}
-            />
-          </div>
-
-          {/* Error */}
-          {error && (
-            <p className="text-sm text-red-600">
-              {error}
-            </p>
-          )}
-
-          {/* Submit */}
-          <Button
-            type="submit"
-            className="w-full bg-orange-500 hover:bg-[#0d47a1] text-white"
-          >
-            Login
-          </Button>
-
-          {/* Signup */}
-          <div className="text-center mt-3 text-sm text-gray-700">
-            Not a USI Member?{" "}
+          <CardFooter className="px-0 pt-4 text-sm text-center">
+            Not a USI Member?{' '}
             <button
               type="button"
-              onClick={() => router.push("/signup")}
-              className="text-orange-500 hover:underline font-medium"
+              onClick={() => router.push('/signup')}
+              className="text-orange-600 font-medium hover:underline"
             >
               Signup
-            </button>{" "}
-            (Subject to USI Approval)
-          </div>
-        </form>
-      </div>
+            </button>{' '}
+            (Subject to USI approval)
+          </CardFooter>
+        </div>
 
-      {/* RIGHT – IMAGE */}
-      <div className="hidden md:flex w-1/2 items-center justify-center p-4 bg-white">
-        <Image
-          src="/images/login.png"
-          alt="Login Illustration"
-          width={300}
-          height={300}
-          className="object-cover"
-        />
-      </div>
+        {/* RIGHT – IMAGE */}
+        <div className="hidden md:flex items-center justify-center bg-white p-6">
+          <Image
+            src="/images/login.png"
+            alt="Login Illustration"
+            width={320}
+            height={320}
+            priority
+          />
+        </div>
+      </Card>
     </div>
-  );
+  )
 }

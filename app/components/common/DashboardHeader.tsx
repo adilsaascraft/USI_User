@@ -1,62 +1,97 @@
-"use client";
+'use client'
 
-import Image from "next/image";
-import { useRouter } from "next/navigation";
-import { useUser } from "@/app/context/UserContext";
-import { Skeleton } from "@/components/ui/skeleton";
-import { useState } from "react";
+import { useRouter } from 'next/navigation'
+import { useUser } from '@/app/context/UserContext'
+import { Skeleton } from '@/components/ui/skeleton'
+import { useEffect, useState } from 'react'
 
-/* Helper to build profile image URL */
+/* ✅ SAFE IMAGE URL */
 const getImageUrl = (path?: string | null): string => {
-  if (!path) return "/profile.jpeg";
-  if (path.startsWith("http")) return path;
-  return `${process.env.NEXT_PUBLIC_BACKEND_BASE_URL || ""}${path}`;
-};
+  if (!path) return '/profile.jpeg'
+
+  if (path.startsWith('blob:')) return path
+  if (path.startsWith('http://') || path.startsWith('https://')) return path
+
+  const base = process.env.NEXT_PUBLIC_API_URL
+  if (!base) return '/profile.jpeg'
+
+  return `${base}${path.startsWith('/') ? path : `/${path}`}`
+}
 
 export default function DashboardHeader() {
-  const router = useRouter();
-  const { user, loading } = useUser();
-  const [imgError, setImgError] = useState(false);
+  const router = useRouter()
+  const { user, loading, updateUser, logout } = useUser()
+  const [imgError, setImgError] = useState(false)
+  const [fetching, setFetching] = useState(false)
 
-  const handleLogout = () => {
-    localStorage.removeItem("authToken");
-    router.push("/login");
-  };
+  /* ---------------- FETCH PROFILE IF MISSING ---------------- */
+  useEffect(() => {
+    const fetchProfile = async () => {
+      if (user?.profilePicture || fetching) return
+
+      try {
+        setFetching(true)
+        const token = localStorage.getItem('accessToken')
+        if (!token) return
+
+        const res = await fetch(
+          `${process.env.NEXT_PUBLIC_API_URL}/api/users/profile`,
+          {
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+            credentials: 'include',
+          }
+        )
+
+        if (!res.ok) return
+
+        const data = await res.json()
+
+        if (data?.profilePicture) {
+          updateUser({
+            profilePicture: data.profilePicture,
+          })
+        }
+      } catch {
+        // silent fail (navbar should never crash)
+      } finally {
+        setFetching(false)
+      }
+    }
+
+    fetchProfile()
+  }, [user?.profilePicture, updateUser, fetching])
 
   const profileSrc = imgError
-    ? "/profile.jpeg"
-    : getImageUrl(user?.profilePhoto);
+    ? '/profile.jpeg'
+    : getImageUrl(user?.profilePicture)
+
+  const handleLogout = async () => {
+    await logout()
+    router.push('/login')
+  }
 
   return (
     <header className="fixed top-0 left-0 right-0 h-20 bg-gradient-to-r from-[#B5D9FF] to-[#D6E7FF] shadow-md flex items-center justify-between px-8 z-50">
-      
-      {/* ===== LEFT SECTION ===== */}
+      {/* LEFT */}
       <div
         className="flex items-center gap-2 cursor-pointer"
-        onClick={() => router.push("/dashboard/events")}
+        onClick={() => router.push('/dashboard/events')}
       >
-        {/* USI Logo */}
-        <Image
+        <img
           src="/urological.png"
           alt="Urological Society of India"
-          width={160}
-          height={60}
-          priority
-          className="object-contain"
+          className="h-12"
         />
 
-        {/* Divider */}
         <div className="h-10 w-[1px] bg-[#1F5C9E] mx-3" />
 
-        {/* ISU Logo + Text */}
         <div className="flex items-center gap-2">
-          <Image
+          <img
             src="/ISU_Logo.png"
             alt="Indian School of Urology"
-            width={55}
-            height={55}
-            priority
-            className="object-contain"
+            className="h-12"
           />
           <p className="text-sm font-bold text-[#1F5C9E] leading-tight">
             Indian School <br /> of Urology
@@ -64,30 +99,23 @@ export default function DashboardHeader() {
         </div>
       </div>
 
-      {/* ===== RIGHT SECTION ===== */}
+      {/* RIGHT */}
       <div className="flex items-center gap-6">
-        {/* Profile */}
-        <button
-          onClick={() => router.push("/dashboard/myprofile")}
-          className="focus:outline-none"
-        >
+        <button onClick={() => router.push('/dashboard/myprofile')}>
           {loading ? (
             <Skeleton className="w-[45px] h-[45px] rounded-full" />
           ) : (
-            <div className="relative w-[45px] h-[45px] rounded-full overflow-hidden border-2 border-white shadow-sm">
-              <Image
+            <div className="w-[45px] h-[45px] rounded-full overflow-hidden border-2 border-white shadow-sm">
+              <img
                 src={profileSrc}
                 alt="Profile"
-                fill
-                sizes="45px"
-                className="object-cover"
+                className="w-full h-full object-cover"
                 onError={() => setImgError(true)}
               />
             </div>
           )}
         </button>
 
-        {/* Logout */}
         <button
           onClick={handleLogout}
           className="bg-orange-500 text-white font-semibold px-6 py-2 rounded-full hover:bg-orange-600 transition"
@@ -96,5 +124,5 @@ export default function DashboardHeader() {
         </button>
       </div>
     </header>
-  );
+  )
 }
