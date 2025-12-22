@@ -1,71 +1,31 @@
 'use client'
 
 import { useRouter } from 'next/navigation'
-import { useUser } from '@/app/context/UserContext'
+import { useAuthStore } from '@/stores/authStore'
 import { Skeleton } from '@/components/ui/skeleton'
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 
 /* ✅ SAFE IMAGE URL */
 const getImageUrl = (path?: string | null): string => {
-  if (!path) return '/profile.jpeg'
+  if (!path) return '/avatar.png'
 
   if (path.startsWith('blob:')) return path
   if (path.startsWith('http://') || path.startsWith('https://')) return path
 
   const base = process.env.NEXT_PUBLIC_API_URL
-  if (!base) return '/profile.jpeg'
+  if (!base) return '/avatar.png'
 
   return `${base}${path.startsWith('/') ? path : `/${path}`}`
 }
 
 export default function DashboardHeader() {
   const router = useRouter()
-  const { user, loading, updateUser, logout } = useUser()
+  const { user, logout } = useAuthStore()
   const [imgError, setImgError] = useState(false)
-  const [fetching, setFetching] = useState(false)
-
-  /* ---------------- FETCH PROFILE IF MISSING ---------------- */
-  useEffect(() => {
-    const fetchProfile = async () => {
-      if (user?.profilePicture || fetching) return
-
-      try {
-        setFetching(true)
-        const token = localStorage.getItem('accessToken')
-        if (!token) return
-
-        const res = await fetch(
-          `${process.env.NEXT_PUBLIC_API_URL}/api/users/profile`,
-          {
-            headers: {
-              Authorization: `Bearer ${token}`,
-            },
-            credentials: 'include',
-          }
-        )
-
-        if (!res.ok) return
-
-        const data = await res.json()
-
-        if (data?.profilePicture) {
-          updateUser({
-            profilePicture: data.profilePicture,
-          })
-        }
-      } catch {
-        // silent fail (navbar should never crash)
-      } finally {
-        setFetching(false)
-      }
-    }
-
-    fetchProfile()
-  }, [user?.profilePicture, updateUser, fetching])
 
   const profileSrc = imgError
-    ? '/profile.jpeg'
-    : getImageUrl(user?.profilePicture)
+    ? '/avatar.png'
+    : getImageUrl((user as any)?.profilePicture)
 
   const handleLogout = async () => {
     await logout()
@@ -77,7 +37,7 @@ export default function DashboardHeader() {
       {/* LEFT */}
       <div
         className="flex items-center gap-2 cursor-pointer"
-        onClick={() => router.push('/dashboard/events')}
+        onClick={() => router.push('/dashboard/mylearning')}
       >
         <img
           src="/urological.png"
@@ -102,7 +62,7 @@ export default function DashboardHeader() {
       {/* RIGHT */}
       <div className="flex items-center gap-6">
         <button onClick={() => router.push('/dashboard/myprofile')}>
-          {loading ? (
+          {!user ? (
             <Skeleton className="w-[45px] h-[45px] rounded-full" />
           ) : (
             <div className="w-[45px] h-[45px] rounded-full overflow-hidden border-2 border-white shadow-sm">

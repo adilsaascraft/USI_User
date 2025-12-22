@@ -4,9 +4,11 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Image from 'next/image'
 import { toast } from 'sonner'
+import { apiRequest } from '@/lib/apiRequest'
+import { getIndianFormattedDate } from '@/lib/formatIndianDate'
+
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
-import { getIndianFormattedDate } from '@/lib/formatIndianDate'
 import {
   Select,
   SelectContent,
@@ -16,6 +18,15 @@ import {
 } from '@/components/ui/select'
 import { Checkbox } from '@/components/ui/checkbox'
 
+type SignupPayload = {
+  prefix?: string
+  name: string
+  email: string
+  mobile: string
+  qualification?: string
+  affiliation?: string
+  country: string
+}
 
 export default function SignupForm() {
   const router = useRouter()
@@ -24,7 +35,7 @@ export default function SignupForm() {
   const [agree, setAgree] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const [form, setForm] = useState({
+  const [form, setForm] = useState<SignupPayload>({
     prefix: '',
     name: '',
     email: '',
@@ -46,8 +57,14 @@ export default function SignupForm() {
     e.preventDefault()
     setError(null)
 
+    // Basic frontend validation (backend-aligned)
     if (!form.name || !form.email || !form.mobile || !form.country) {
       setError('Please fill all required fields.')
+      return
+    }
+
+    if (!/^\d{10}$/.test(form.mobile)) {
+      setError('Mobile number must be 10 digits.')
       return
     }
 
@@ -59,32 +76,24 @@ export default function SignupForm() {
     try {
       setLoading(true)
 
-      const res = await fetch(
-        `${process.env.NEXT_PUBLIC_API_URL}/api/users/register`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify(form),
-        }
-      )
-
-      const data = await res.json()
-
-      if (!res.ok) {
-        throw new Error(data.message || 'Signup failed')
-      }
-      toast.success('Signup Successful 🎉 Wait for Admin Approval', {
-        description: getIndianFormattedDate(),
+      await apiRequest<SignupPayload, any>({
+        endpoint: '/api/users/register',
+        method: 'POST',
+        body: form,
+        showToast: true,
+        successMessage: 'Signup Successful 🎉 Wait for Admin Approval',
       })
 
-      // ⏳ Redirect after 10 seconds
+      toast.success('Signup Successful 🎉', {
+        description: `Submitted on ${getIndianFormattedDate()}`,
+      })
+
+      // Redirect to login
       setTimeout(() => {
         router.push('/login')
       }, 1000)
     } catch (err: any) {
-      setError(err.message || 'Something went wrong')
+      setError(err.message || 'Signup failed')
     } finally {
       setLoading(false)
     }

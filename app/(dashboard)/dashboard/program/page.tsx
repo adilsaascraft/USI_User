@@ -17,8 +17,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { useAuthStore } from '@/stores/authStore'
+import { apiRequest } from '@/lib/apiRequest'
+import { toast } from 'sonner'
 
-const TABS = ['Live', 'Upcoming', 'Past'] as const
+/* ---------------- TYPES ---------------- */
+
+const TABS = ['Live', 'Upcoming', 'Past', 'All'] as const
 type Tab = (typeof TABS)[number]
 type SortOrder = 'newest' | 'oldest'
 
@@ -36,7 +41,11 @@ interface Webinar {
   dynamicStatus: 'Live' | 'Upcoming' | 'Past'
 }
 
+/* ---------------- COMPONENT ---------------- */
+
 export default function WebinarList() {
+  const user = useAuthStore((state) => state.user)
+
   const [tab, setTab] = useState<Tab>('Live')
   const [q, setQ] = useState('')
   const [sortOrder, setSortOrder] = useState<SortOrder>('newest')
@@ -50,17 +59,19 @@ export default function WebinarList() {
   const [identifier, setIdentifier] = useState('')
   const [submitting, setSubmitting] = useState(false)
 
-  const [registered, setRegistered] = useState<string[]>([])
+  /* 🔥 BACKEND-DRIVEN REGISTERED STATE */
+  const [registeredIds, setRegisteredIds] = useState<string[]>([])
 
-  /* ---------------- FETCH ---------------- */
+  /* ---------------- FETCH WEBINARS ---------------- */
+
   useEffect(() => {
     const fetchWebinars = async () => {
       try {
-        const res = await fetch(
-          `${process.env.NEXT_PUBLIC_API_URL}/api/webinars/smart-learning/active`
-        )
-        const json = await res.json()
-        setWebinars(json.data || [])
+        const res = await apiRequest<null, any>({
+          endpoint: '/api/webinars/smart-learning/active',
+          method: 'GET',
+        })
+        setWebinars(res.data || [])
       } catch {
         setWebinars([])
       } finally {
@@ -71,55 +82,94 @@ export default function WebinarList() {
     fetchWebinars()
   }, [])
 
-  /* ---------------- TAB + SEARCH + SORT ---------------- */
+  /* ---------------- FETCH USER REGISTRATIONS ---------------- */
+
+  useEffect(() => {
+    if (!user?.id) return
+
+    const fetchRegistrations = async () => {
+      try {
+        const res = await apiRequest<null, any>({
+          endpoint: `/api/webinar/registrations/${user.id}`,
+          method: 'GET',
+        })
+
+        const ids = res.data.map((r: any) => r.webinar._id)
+        setRegisteredIds(ids)
+      } catch {
+        // silent
+      }
+    }
+
+    fetchRegistrations()
+  }, [user?.id])
+
+  /* ---------------- FILTER + SORT ---------------- */
+
   const filtered = useMemo(() => {
-    const byTabAndSearch = webinars.filter(
-      (w) =>
-        w.dynamicStatus === tab &&
-        w.name.toLowerCase().includes(q.toLowerCase())
+    const byTab = webinars.filter((w) => {
+      if (tab === 'All') return true
+      return w.dynamicStatus === tab
+    })
+
+    const bySearch = byTab.filter((w) =>
+      w.name.toLowerCase().includes(q.toLowerCase())
     )
 
-    return byTabAndSearch.sort((a, b) => {
+    return bySearch.sort((a, b) => {
       const aDate = new Date(a.startDate).getTime()
       const bDate = new Date(b.startDate).getTime()
       return sortOrder === 'newest' ? bDate - aDate : aDate - bDate
     })
   }, [webinars, tab, q, sortOrder])
 
+  /* ---------------- BUILD REGISTER PAYLOAD ---------------- */
+
+  const buildRegisterPayload = () => {
+    if (/^\d{10}$/.test(identifier)) return { mobile: identifier }
+    if (identifier.includes('@')) return { email: identifier }
+    return { membershipNumber: identifier }
+  }
+
   /* ---------------- REGISTER ---------------- */
+
   const handleRegister = async () => {
-    if (!selectedWebinar) return
+    if (!selectedWebinar || !identifier || !user?.id) return
 
     try {
       setSubmitting(true)
 
-      const res = await fetch(
-        `${process.env.NEXT_PUBLIC_API_URL}/api/webinars/${selectedWebinar._id}/register`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ identifier }),
-        }
-      )
+      await apiRequest({
+        endpoint: '/api/webinar/register',
+        method: 'POST',
+        body: {
+          webinarId: selectedWebinar._id,
+          userId: user.id,
+          ...buildRegisterPayload(),
+        },
+      })
 
-      if (!res.ok) throw new Error()
+      toast.success('You have successfully registered for this program 🎉')
 
-      setRegistered((p) => [...p, selectedWebinar._id])
+      setRegisteredIds((prev) => [...prev, selectedWebinar._id])
       setDialogOpen(false)
       setIdentifier('')
-    } catch {
-      alert('Registration failed or already registered')
+    } catch (err: any) {
+      toast.error(err.message || 'Registration failed')
     } finally {
       setSubmitting(false)
     }
   }
 
   /* ---------------- UI ---------------- */
+
   return (
     <div className="p-6">
       {/* HEADER */}
       <div className="mb-6">
-        <h1 className="text-2xl font-semibold text-[#252641]">Smart Learning Programs</h1>
+        <h1 className="text-2xl font-semibold text-[#252641]">
+          Smart Learning Programs
+        </h1>
 
         <div className="mt-4 flex gap-6 border-b pb-3">
           {TABS.map((t) => (
@@ -182,7 +232,6 @@ export default function WebinarList() {
                 className="rounded-xl h-44 object-cover"
               />
 
-              {/* STATUS */}
               <span
                 className={`mt-3 inline-block w-fit px-3 py-1 text-xs rounded-full font-medium ${
                   w.dynamicStatus === 'Live'
@@ -213,7 +262,14 @@ export default function WebinarList() {
               </div>
 
               <div className="mt-auto pt-4">
-                {registered.includes(w._id) ? (
+                {w.dynamicStatus === 'Past' ? (
+                  <button
+                    disabled
+                    className="w-full px-4 py-2 rounded-full text-sm font-semibold bg-gray-300 text-gray-600 cursor-not-allowed"
+                  >
+                    Webinar Closed
+                  </button>
+                ) : registeredIds.includes(w._id) ? (
                   <Link
                     href={`/dashboard/webinar/${w._id}`}
                     className="block text-center px-4 py-2 bg-blue-600 text-white rounded-full text-sm font-semibold"
@@ -242,7 +298,7 @@ export default function WebinarList() {
           ))}
       </div>
 
-      {/* ALERT DIALOG */}
+      {/* REGISTER DIALOG */}
       <AlertDialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <AlertDialogContent>
           {selectedWebinar?.registrationType === 'paid' ? (
@@ -250,7 +306,7 @@ export default function WebinarList() {
               <h2 className="text-lg font-semibold">
                 Payment integration coming soon
               </h2>
-              <AlertDialogCancel>Close</AlertDialogCancel>
+              <AlertDialogCancel disabled={submitting}>Close</AlertDialogCancel>
             </div>
           ) : (
             <div className="space-y-4">
@@ -265,6 +321,7 @@ export default function WebinarList() {
               <input
                 value={identifier}
                 onChange={(e) => setIdentifier(e.target.value)}
+                disabled={submitting}
                 placeholder="USI No | Email | Mobile"
                 className="w-full border rounded px-4 py-2"
               />
@@ -277,7 +334,9 @@ export default function WebinarList() {
                 {submitting ? 'Submitting...' : 'Submit'}
               </button>
 
-              <AlertDialogCancel className="w-full">Cancel</AlertDialogCancel>
+              <AlertDialogCancel className="w-full" disabled={submitting}>
+                Cancel
+              </AlertDialogCancel>
             </div>
           )}
         </AlertDialogContent>

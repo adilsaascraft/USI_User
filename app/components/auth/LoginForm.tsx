@@ -5,6 +5,8 @@ import Image from 'next/image'
 import { z } from 'zod'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
+import { useAuthStore } from '@/stores/authStore'
+import { apiRequest } from '@/lib/apiRequest'
 
 import {
   Card,
@@ -48,12 +50,26 @@ const buildLoginPayload = (identifier: string) => {
     return { email: identifier }
   }
 
-  // Membership Number (fallback)
+  // Membership Number
   return { membershipNumber: identifier }
+}
+
+type LoginResponse = {
+  accessToken: string
+  user: {
+    id: string
+    name: string
+    email: string
+    mobile?: string
+    membershipNumber?: string
+    role: 'user'
+    status: 'Pending' | 'Approved'
+  }
 }
 
 export default function LoginForm() {
   const router = useRouter()
+  const setUser = useAuthStore((state) => state.setUser)
 
   const form = useForm<LoginValues>({
     resolver: zodResolver(LoginSchema),
@@ -69,27 +85,14 @@ export default function LoginForm() {
     try {
       const payload = buildLoginPayload(values.identifier)
 
-      const res = await fetch(
-        `${process.env.NEXT_PUBLIC_API_URL}/api/users/login`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          credentials: 'include', // ✅ REQUIRED for refresh token cookie
-          body: JSON.stringify(payload),
-        }
-      )
+      const data = await apiRequest<typeof payload, LoginResponse>({
+        endpoint: '/api/users/login',
+        method: 'POST',
+        body: payload,
+      })
 
-      const data = await res.json()
-
-      if (!res.ok) {
-        throw new Error(data.message || 'Login failed')
-      }
-
-      /* ✅ Store access token + user */
-      localStorage.setItem('accessToken', data.accessToken)
-      localStorage.setItem('user', JSON.stringify(data.user))
+      // ✅ Store token + user (approved users only reach here)
+      setUser(data.user, data.accessToken)
 
       router.push('/dashboard')
     } catch (error: any) {

@@ -1,9 +1,9 @@
 'use client'
 
-import useSWR from 'swr'
 import { useEffect, useState } from 'react'
-import { useUser } from '@/app/context/UserContext'
+import { useAuthStore } from '@/stores/authStore'
 import type { ProfileData } from '@/app/types/profile'
+import { apiRequest } from '@/lib/apiRequest'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -11,16 +11,9 @@ import { Loader2, Pencil } from 'lucide-react'
 import { toast } from 'sonner'
 import { getIndianFormattedDate } from '@/lib/formatIndianDate'
 
-const fetcher = async (url: string) => {
-  const token = localStorage.getItem('accessToken')
-  const res = await fetch(url, {
-    headers: { Authorization: `Bearer ${token}` },
-    credentials: 'include',
-  })
-  if (!res.ok) throw new Error('Failed to fetch profile')
-  return res.json()
-}
-
+/* -------------------------------------------------------------------------- */
+/*                           API → FORM MAPPER                                 */
+/* -------------------------------------------------------------------------- */
 const mapApiToForm = (user: any): ProfileData => ({
   prefix: user.prefix || '',
   fullName: user.name || '',
@@ -36,32 +29,60 @@ const mapApiToForm = (user: any): ProfileData => ({
 })
 
 export default function ProfileComponent() {
-  const { data, mutate, isLoading } = useSWR(
-    `${process.env.NEXT_PUBLIC_API_URL}/api/users/profile`,
-    fetcher
-  )
-  const { updateUser } = useUser()
-
+  const { user, updateUser } = useAuthStore()
 
   const [form, setForm] = useState<ProfileData | null>(null)
   const [previewPhoto, setPreviewPhoto] = useState('/profile.jpeg')
   const [photoFile, setPhotoFile] = useState<File | null>(null)
   const [isUpdating, setIsUpdating] = useState(false)
   const [isEditMode, setIsEditMode] = useState(false)
+  const [loading, setLoading] = useState(true)
 
+  /* -------------------------------------------------------------------------- */
+  /*                           INIT FROM STORE / API                             */
+  /* -------------------------------------------------------------------------- */
   useEffect(() => {
-    if (data) {
-      const mapped = mapApiToForm(data)
-      setForm(mapped)
-      setPreviewPhoto(mapped.profilePicture || '/profile.jpeg')
+    const initProfile = async () => {
+      try {
+        const profile = await apiRequest<null, any>({
+          endpoint: '/api/users/profile',
+          method: 'GET',
+        })
+
+        const mapped = mapApiToForm(profile)
+        setForm(mapped)
+        setPreviewPhoto(mapped.profilePicture || '/profile.jpeg')
+
+        // keep store in sync (first load)
+        updateUser({
+          profilePicture: profile.profilePicture,
+          name: profile.name,
+          email: profile.email,
+          mobile: profile.mobile,
+          qualification: profile.qualification,
+          affiliation: profile.affiliation,
+          country: profile.country,
+          city: profile.city,
+          state: profile.state,
+          pincode: profile.pincode,
+        })
+      } catch (error: any) {
+        toast.error(error.message || 'Failed to load profile')
+      } finally {
+        setLoading(false)
+      }
     }
-  }, [data])
+
+    initProfile()
+  }, [updateUser])
 
   const handleChange = (key: keyof ProfileData, value: string) => {
     setForm((prev) => ({ ...prev!, [key]: value }))
   }
 
-  /* ✅ FILE PICKER NOW WORKS */
+  /* -------------------------------------------------------------------------- */
+  /*                              PHOTO PICKER                                  */
+  /* -------------------------------------------------------------------------- */
   const handlePhotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files?.[0]) {
       const file = e.target.files[0]
@@ -70,13 +91,15 @@ export default function ProfileComponent() {
     }
   }
 
+  /* -------------------------------------------------------------------------- */
+  /*                              SUBMIT                                        */
+  /* -------------------------------------------------------------------------- */
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!form) return
 
     try {
       setIsUpdating(true)
-      const token = localStorage.getItem('accessToken')
 
       const fd = new FormData()
       fd.append('prefix', form.prefix)
@@ -93,31 +116,31 @@ export default function ProfileComponent() {
         fd.append('profilePicture', photoFile)
       }
 
-      const res = await fetch(
-        `${process.env.NEXT_PUBLIC_API_URL}/api/users/profile`,
-        {
-          method: 'PUT',
-          headers: { Authorization: `Bearer ${token}` },
-          credentials: 'include',
-          body: fd,
-        }
-      )
-
-      if (!res.ok) throw new Error('Update failed')
+      const res = await apiRequest<FormData, any>({
+        endpoint: '/api/users/profile',
+        method: 'PUT',
+        body: fd,
+      })
 
       toast.success('Profile Updated', {
         description: getIndianFormattedDate(),
       })
 
-      // update user context
+      // 🔥 INSTANT UI UPDATE (NAVBAR + PROFILE)
       updateUser({
-        profilePicture: previewPhoto, // instant navbar update
+        profilePicture: res.user?.profilePicture ?? previewPhoto,
+        name: res.user?.name,
+        mobile: res.user?.mobile,
+        qualification: res.user?.qualification,
+        affiliation: res.user?.affiliation,
+        country: res.user?.country,
+        city: res.user?.city,
+        state: res.user?.state,
+        pincode: res.user?.pincode,
       })
-
 
       setIsEditMode(false)
       setPhotoFile(null)
-      mutate()
     } catch (err: any) {
       toast.error(err.message || 'Something went wrong')
     } finally {
@@ -125,7 +148,7 @@ export default function ProfileComponent() {
     }
   }
 
-  if (isLoading || !form) {
+  if (loading || !form) {
     return (
       <div className="flex justify-center py-16">
         <Loader2 className="animate-spin text-orange-500" />
@@ -153,7 +176,7 @@ export default function ProfileComponent() {
             </Label>
 
             <Input
-              id="photoUpload" // ✅ LINKED
+              id="photoUpload"
               type="file"
               accept="image/png,image/jpeg"
               className="sr-only"
