@@ -267,7 +267,7 @@ export default function WebinarList() {
                     disabled
                     className="w-full px-4 py-2 rounded-full text-sm font-semibold bg-gray-300 text-gray-600 cursor-not-allowed"
                   >
-                    Webinar Closed
+                    Registration Closed
                   </button>
                 ) : registeredIds.includes(w._id) ? (
                   <Link

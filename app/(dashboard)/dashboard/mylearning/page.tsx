@@ -12,21 +12,29 @@ import { apiRequest } from '@/lib/apiRequest'
    BACKEND RESPONSE TYPES
 ========================= */
 
-type Webinar = {
+interface Course {
   _id: string
-  name: string
-  image: string
-  webinarType: string
+  id: string
+  courseName: string
+  courseImage: string
   startDate: string
   endDate: string
   startTime: string
   endTime: string
-  dynamicStatus: string
+  timeZone: string
+  registrationType: 'free' | 'paid'
+  amount: number
+  status: 'Active' | 'Inactive'
+  streamLink: string
+  description: string
+  createdAt: string
+  updatedAt: string
+  __v: number
 }
 
 type Registration = {
   id: string
-  webinar: Webinar
+  course: Course
   registeredOn: string
 }
 
@@ -41,7 +49,7 @@ export default function MyLearningPage() {
   const user = useAuthStore((state) => state.user)
 
   /* =========================
-     FETCH REGISTERED WEBINARS
+     FETCH REGISTERED COURSES
   ========================= */
   useEffect(() => {
     if (!user?.id) {
@@ -52,13 +60,13 @@ export default function MyLearningPage() {
     const fetchMyLearning = async () => {
       try {
         const res = await apiRequest<null, any>({
-          endpoint: `/api/webinar/registrations/${user.id}`,
+          endpoint: `/api/course/registrations/${user.id}`,
           method: 'GET',
         })
 
         setCourses(res.data || [])
       } catch (error) {
-        console.error('Failed to fetch registered webinars', error)
+        console.error('Failed to fetch registered courses', error)
         setCourses([])
       } finally {
         setLoading(false)
@@ -75,7 +83,7 @@ export default function MyLearningPage() {
     const q = search.trim().toLowerCase()
     if (!q) return courses
 
-    return courses.filter((item) => item.webinar.name.toLowerCase().includes(q))
+    return courses.filter((item) => item.course.courseName.toLowerCase().includes(q))
   }, [search, courses])
 
   /* =========================
@@ -104,14 +112,14 @@ export default function MyLearningPage() {
       {/* Grid */}
       {!loading && (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-          {filteredCourses.map(({ id, webinar }) => (
+          {filteredCourses.map(({ id, course }) => (
             <div
               key={id}
               className="bg-white rounded-2xl overflow-hidden flex flex-col card-shadow hover:-translate-y-2 transition"
             >
               <Image
-                src={webinar.image}
-                alt={webinar.name}
+                src={course.courseImage}
+                alt={course.courseName}
                 width={480}
                 height={260}
                 className="object-cover w-full h-44"
@@ -121,27 +129,27 @@ export default function MyLearningPage() {
                 <div className="text-sm space-y-2">
                   <div className="flex items-center gap-2">
                     <CalendarDays size={14} />
-                    {webinar.startDate} - {webinar.endDate}
+                    {course.startDate} - {course.endDate}
                   </div>
 
                   <div className="flex items-center gap-2">
                     <Clock size={14} />
-                    {webinar.startTime} - {webinar.endTime}
+                    {course.startTime} - {course.endTime}
                   </div>
                 </div>
 
                 <h3 className="mt-2 font-semibold line-clamp-2">
-                  {webinar.name}
+                  {course.courseName}
                 </h3>
 
                 <div className="mt-auto pt-4 flex justify-center">
                   <Button
                     onClick={() =>
-                      router.push(`/dashboard/webinar/${webinar._id}`)
+                      router.push(`/dashboard/elearning/${course._id}`)
                     }
-                    className="w-32"
+                    className="w-full bg-blue-600 hover:bg-blue-700"
                   >
-                    View Now
+                    Go to Course
                   </Button>
                 </div>
               </div>

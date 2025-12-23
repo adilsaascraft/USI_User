@@ -162,7 +162,7 @@ export default function SpeakerDetailsPage() {
                     disabled
                     className="mt-3 w-full bg-gray-300 text-xs py-2 rounded"
                   >
-                    Webinar Closed
+                    Registration Closed
                   </button>
                 ) : registeredIds.includes(w._id) ? (
                   <button

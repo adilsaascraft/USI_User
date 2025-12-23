@@ -1,7 +1,7 @@
-"use client";
+'use client'
 
-import React from "react";
-import Image from "next/image";
+import React, { useEffect, useState } from 'react'
+import Image from 'next/image'
 import {
   Briefcase,
   Building2,
@@ -9,34 +9,76 @@ import {
   Award,
   Users,
   GraduationCap,
-} from "lucide-react";
+} from 'lucide-react'
+import { apiRequest } from '@/lib/apiRequest'
+import { Skeleton } from '@/components/ui/skeleton'
 
+/* ================= TYPES ================= */
 type FacultyItem = {
-  id?: string | number;
-  role?: "convenor" | "co-convenor" | "faculty" | string;
-  name: string;
-  title?: string;
-  institution?: string;
-  location?: string;
-  photo?: string;
-};
+  id: string
+  role: 'convenor' | 'co-convenor' | 'faculty'
+  name: string
+  title?: string
+  institution?: string
+  location?: string
+  photo?: string
+}
 
-export default function Faculty({ faculty = [] }: { faculty?: FacultyItem[] }) {
-  const byRole = (role: string) =>
-    faculty.filter((f) => f.role?.toLowerCase() === role);
+export default function Faculty({ webinarId }: { webinarId: string }) {
+  const [faculty, setFaculty] = useState<FacultyItem[]>([])
+  const [loading, setLoading] = useState(true)
 
-  const convenor = byRole("convenor");
-  const coConvenor = byRole("co-convenor");
-  const others = faculty.filter(
-    (f) => !["convenor", "co-convenor"].includes(f.role?.toLowerCase() || "")
-  );
+  /* ================= FETCH FROM BACKEND ================= */
+  useEffect(() => {
+    const fetchFaculty = async () => {
+      try {
+        const res = await apiRequest<null, any>({
+          endpoint: `/api/assign-speakers/${webinarId}`,
+          method: 'GET',
+        })
+
+        const mapped: FacultyItem[] = res.data.map((item: any) => {
+          const s = item.speakerId
+
+          return {
+            id: s._id,
+
+            // 🔥 BACKEND → UI ROLE MAPPING
+            role: item.facultyType.toLowerCase(),
+
+            name: `${s.prefix} ${s.speakerName}`,
+            title: s.specialization || s.degree,
+            institution: s.affiliation,
+            location: [s.city, s.state, s.country].filter(Boolean).join(', '),
+            photo: s.speakerProfilePicture,
+          }
+        })
+
+        setFaculty(mapped)
+      } catch {
+        setFaculty([])
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    fetchFaculty()
+  }, [webinarId])
+
+  /* ================= GROUPING ================= */
+  const byRole = (role: FacultyItem['role']) =>
+    faculty.filter((f) => f.role === role)
+
+  const convenor = byRole('convenor')
+  const coConvenor = byRole('co-convenor')
+  const others = byRole('faculty')
 
   /* ================= CARD ================= */
   function Card({ f }: { f: FacultyItem }) {
     return (
       <div className="border rounded-xl p-4 flex gap-4 bg-white">
         {/* Avatar */}
-        <div className="w-20 h-20 rounded-full bg-[#E5E7EB] flex items-center justify-center overflow-hidden shrink-0">
+        <div className="w-20 h-20 rounded-full bg-gray-200 flex items-center justify-center overflow-hidden shrink-0">
           {f.photo ? (
             <Image
               src={f.photo}
@@ -48,10 +90,10 @@ export default function Faculty({ faculty = [] }: { faculty?: FacultyItem[] }) {
           ) : (
             <span className="text-xl font-semibold text-gray-600">
               {f.name
-                .split(" ")
+                .split(' ')
                 .map((n) => n[0])
                 .slice(0, 2)
-                .join("")
+                .join('')
                 .toUpperCase()}
             </span>
           )}
@@ -59,33 +101,31 @@ export default function Faculty({ faculty = [] }: { faculty?: FacultyItem[] }) {
 
         {/* Info */}
         <div className="space-y-1">
-          <h3 className="text-[#1F5C9E] font-semibold">
-            {f.name}
-          </h3>
+          <h3 className="text-[#1F5C9E] font-semibold">{f.name}</h3>
 
           {f.title && (
-            <div className="flex items-center gap-2 text-sm text-black-700">
+            <div className="flex items-center gap-2 text-sm">
               <Briefcase size={14} />
               <span>{f.title}</span>
             </div>
           )}
 
           {f.institution && (
-            <div className="flex items-center gap-2 text-sm text-black-700">
+            <div className="flex items-center gap-2 text-sm">
               <Building2 size={14} />
               <span>{f.institution}</span>
             </div>
           )}
 
           {f.location && (
-            <div className="flex items-center gap-2 text-sm text-black-700">
+            <div className="flex items-center gap-2 text-sm">
               <MapPin size={14} />
               <span>{f.location}</span>
             </div>
           )}
         </div>
       </div>
-    );
+    )
   }
 
   /* ================= SECTION ================= */
@@ -93,35 +133,48 @@ export default function Faculty({ faculty = [] }: { faculty?: FacultyItem[] }) {
     title,
     icon: Icon,
     items,
-    cols = "grid-cols-1",
+    cols,
   }: {
-    title: string;
-    icon: React.ComponentType<{ className?: string }>;
-    items: FacultyItem[];
-    cols?: string;
+    title: string
+    icon: React.ComponentType<{ className?: string }>
+    items: FacultyItem[]
+    cols: string
   }) {
-    if (!items.length) return null;
+    if (!items.length) return null
 
     return (
       <div className="mb-10">
-        {/* TITLE WITH ICON */}
         <h2 className="flex items-center gap-2 text-lg font-semibold mb-4">
           <Icon className="w-5 h-5 text-[#1F5C9E]" />
           {title}
         </h2>
 
         <div className={`grid ${cols} gap-6`}>
-          {items.map((f, i) => (
-            <Card key={f.id ?? i} f={f} />
+          {items.map((f) => (
+            <Card key={f.id} f={f} />
           ))}
         </div>
       </div>
-    );
+    )
+  }
+
+  /* ================= UI ================= */
+  if (loading) {
+    return (
+      <div className="space-y-6">
+        <Skeleton className="h-6 w-40" />
+        <Skeleton className="h-32 rounded-xl" />
+        <Skeleton className="h-32 rounded-xl" />
+      </div>
+    )
+  }
+
+  if (!faculty.length) {
+    return <p className="text-gray-500">No faculty information available.</p>
   }
 
   return (
     <div>
-      {/* Convenor */}
       <Section
         title="Convenor"
         icon={Award}
@@ -129,27 +182,19 @@ export default function Faculty({ faculty = [] }: { faculty?: FacultyItem[] }) {
         cols="grid-cols-1 max-w-md"
       />
 
-      {/* Co-Convenor */}
       <Section
-        title="Co - Convenor"
+        title="Co-Convenor"
         icon={Users}
         items={coConvenor}
         cols="grid-cols-1 md:grid-cols-2"
       />
 
-      {/* Faculty */}
       <Section
         title="Faculty"
         icon={GraduationCap}
         items={others}
         cols="grid-cols-1 md:grid-cols-2"
       />
-
-      {faculty.length === 0 && (
-        <p className="text-gray-500">
-          No faculty information available.
-        </p>
-      )}
     </div>
-  );
+  )
 }

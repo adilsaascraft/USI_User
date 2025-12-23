@@ -1,81 +1,137 @@
-"use client";
+'use client'
 
-import { useState } from "react";
-import { useParams, useRouter } from "next/navigation";
-import Image from "next/image";
+import { useEffect, useState } from 'react'
+import { useParams, useRouter } from 'next/navigation'
+import Image from 'next/image'
 import {
   CalendarDays,
   Clock,
   CheckCircle2,
-  ChevronDown,
-  Eye,
-} from "lucide-react";
+  PlayCircle,
+  FileText,
+  ImageIcon,
+} from 'lucide-react'
+import { apiRequest } from '@/lib/apiRequest'
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from '@/components/ui/accordion'
 
-import { ELEARNING_COURSES } from "@/app/data/elearning/elearning";
-import { COURSE_DETAIL } from "@/app/data/elearning/detail";
-import PreviewVideoModal from "@/app/components/dashboard/elearning/PreviewVideoModal";
+/* ================= TYPES ================= */
 
-/* ---------- helpers ---------- */
-function formatTotalTime(totalMinutes: number) {
-  const h = Math.floor(totalMinutes / 60);
-  const m = totalMinutes % 60;
-  return `${h}h ${m}m`;
+interface CourseApi {
+  _id: string
+  courseName: string
+  courseImage: string
+  startDate: string
+  endDate: string
+  startTime: string
+  endTime: string
+  streamLink: string
+  description: string
+  status: string
 }
 
+interface CourseModule {
+  _id: string
+  courseModuleName: string
+  contentType: 'video' | 'document' | 'photos'
+  contentLink: string
+  duration?: string
+}
+
+interface CourseWeek {
+  _id: string
+  weekCategoryName: string
+  modules: CourseModule[]
+}
+
+/* ================= PAGE ================= */
+
 export default function ElearningDetailPage() {
-  const params = useParams();
-  const router = useRouter();
-  const id = Number(params.id);
+  const params = useParams<{ id: string }>()
+  const router = useRouter()
+  const courseId = params.id
 
-  const course = ELEARNING_COURSES.find((c) => c.id === id);
+  const [course, setCourse] = useState<CourseApi | null>(null)
+  const [weeks, setWeeks] = useState<CourseWeek[]>([])
+  const [loading, setLoading] = useState(true)
 
-  const [openIndex, setOpenIndex] = useState<number | null>(0);
-  const [showMore, setShowMore] = useState(false);
+  /* ================= FETCH COURSE ================= */
+  useEffect(() => {
+    if (!courseId) return
 
-  const [previewOpen, setPreviewOpen] = useState(false);
-  const [previewLecture, setPreviewLecture] = useState<{
-    title: string;
-    videoUrl: string;
-  } | null>(null);
+    const fetchData = async () => {
+      try {
+        const [courseRes, weeksRes] = await Promise.all([
+          apiRequest<null, any>({
+            endpoint: `/api/courses/${courseId}`,
+            method: 'GET',
+          }),
+          apiRequest<null, any>({
+            endpoint: `/api/courses/${courseId}/weeks-with-modules`,
+            method: 'GET',
+          }),
+        ])
 
-  if (!course) return <div className="p-8">Course not found</div>;
+        setCourse(courseRes.data)
+        setWeeks(weeksRes.data || [])
+      } catch (err) {
+        console.error('Failed to fetch course detail', err)
+      } finally {
+        setLoading(false)
+      }
+    }
 
-  const sections = COURSE_DETAIL.content.length;
-  const totalLectures = COURSE_DETAIL.content.reduce(
-    (s, w) => s + w.lectures,
-    0
-  );
-  const totalMinutes = COURSE_DETAIL.content.reduce(
-    (s, w) => s + w.durationMinutes,
-    0
-  );
+    fetchData()
+  }, [courseId])
+
+  if (loading) {
+    return <div className="p-8 text-center">Loading...</div>
+  }
+
+  if (!course) {
+    return <div className="p-8 text-center">Course not found</div>
+  }
+
+  /* ================= HELPERS ================= */
+
+  const getIcon = (type: CourseModule['contentType']) => {
+    switch (type) {
+      case 'video':
+        return <PlayCircle size={18} className="text-blue-600" />
+      case 'document':
+        return <FileText size={18} className="text-green-600" />
+      case 'photos':
+        return <ImageIcon size={18} className="text-purple-600" />
+      default:
+        return null
+    }
+  }
 
   return (
     <div className="max-w-[1320px] mx-auto px-6 py-6 space-y-8">
-
       {/* ================= BREADCRUMB ================= */}
       <div className="flex items-center gap-2 text-sm">
         <button
-          onClick={() => router.push("/dashboard/elearning")}
+          onClick={() => router.push('/dashboard/elearning')}
           className="text-gray-500 hover:text-[#1F5C9E]"
         >
           E-learning Courses
         </button>
-        <span className="text-gray-400">{">"}</span>
-        <span className="text-[#1F5C9E] font-medium">
-          {course.title}
-        </span>
+        <span className="text-gray-400">{'>'}</span>
+        <span className="text-[#1F5C9E] font-medium">{course.courseName}</span>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-[1fr_260px] gap-6">
-
         {/* ================= LEFT ================= */}
         <div className="space-y-6">
-
-          {/* VIDEO PLAYER */}
+          {/* VIDEO */}
           <div className="rounded-2xl overflow-hidden aspect-video shadow">
             <iframe
-              src={course.videoUrl}
+              src={course.streamLink}
               className="w-full h-full"
               allow="autoplay; fullscreen"
               allowFullScreen
@@ -87,112 +143,100 @@ export default function ElearningDetailPage() {
             <div className="flex justify-between text-sm text-gray-700">
               <div className="flex items-center gap-2">
                 <CalendarDays size={14} />
-                {course.dateRange}
+                {course.startDate} - {course.endDate}
               </div>
+
               <div className="flex items-center gap-2">
                 <span className="w-2.5 h-2.5 rounded-full bg-green-500 border border-black" />
                 <span className="text-green-600 font-medium">
-                  {course.mode}
+                  {course.status}
                 </span>
               </div>
             </div>
 
             <div className="flex items-center gap-2 text-sm text-gray-700">
               <Clock size={14} />
-              {course.time}
+              {course.startTime} - {course.endTime}
             </div>
 
             <h1 className="text-lg font-semibold text-[#252641]">
-              {course.title}
+              {course.courseName}
             </h1>
+
+            <button
+              disabled
+              className="mt-6 w-full px-4 py-2 bg-gray-300 text-gray-600 rounded-full flex items-center justify-center gap-2 cursor-not-allowed"
+            >
+              <CheckCircle2 size={16} />
+              Registered
+            </button>
           </div>
 
-          {/* COURSE CONTENT */}
+          {/* DESCRIPTION */}
           <section className="bg-white rounded-2xl shadow p-6">
-            <h2 className="text-lg font-semibold mb-1">Course content</h2>
+            <h2 className="text-lg font-semibold mb-3">About this course</h2>
+            <div
+              className="text-sm text-gray-700 leading-relaxed"
+              dangerouslySetInnerHTML={{ __html: course.description }}
+            />
+          </section>
 
-            <p className="text-sm text-gray-600 mb-4">
-              {sections} sections • {totalLectures} lectures •{" "}
-              {formatTotalTime(totalMinutes)} total length
-            </p>
+          {/* ================= COURSE CONTENT ================= */}
+          <section className="bg-white rounded-2xl shadow p-6">
+            <h2 className="text-lg font-semibold mb-4">Course Content</h2>
 
-            <div className="border rounded-xl divide-y">
-              {COURSE_DETAIL.content.map((week, i) => {
-                const open = openIndex === i;
+            <Accordion type="multiple" className="space-y-3">
+              {weeks.map((week) => (
+                <AccordionItem
+                  key={week._id}
+                  value={week._id}
+                  className="border rounded-xl px-4"
+                >
+                  <AccordionTrigger className="font-medium text-left">
+                    {week.weekCategoryName}
+                  </AccordionTrigger>
 
-                return (
-                  <div key={i}>
-                    <button
-                      onClick={() => setOpenIndex(open ? null : i)}
-                      className={`w-full flex justify-between px-4 py-3 text-sm font-medium ${
-                        open
-                          ? "bg-[#1F5C9E] text-white"
-                          : "bg-white hover:bg-gray-50"
-                      }`}
-                    >
-                      <div className="flex gap-2 items-center">
-                        <ChevronDown
-                          size={16}
-                          className={`transition ${open ? "rotate-180" : ""}`}
-                        />
-                        {week.week}
-                      </div>
-
-                      <span>
-                        {week.lectures} lectures • {week.durationMinutes} min
-                      </span>
-                    </button>
-
-                    {open &&
-                      week.items.map((lec, idx) => (
+                  <AccordionContent className="space-y-2 pt-2">
+                    {week.modules.length === 0 ? (
+                      <p className="text-sm text-gray-500">
+                        No modules available for this week
+                      </p>
+                    ) : (
+                      week.modules.map((module) => (
                         <div
-                          key={idx}
-                          className="flex justify-between px-6 py-3 text-sm border-t"
+                          key={module._id}
+                          className="flex items-center justify-between p-3 rounded-lg hover:bg-gray-50 transition"
                         >
-                          {/* ✅ CLICKABLE LECTURE TITLE */}
+                          {/* LEFT */}
                           <button
                             onClick={() =>
-                              router.push("/dashboard/elearning/lecture")
+                              router.push(
+                                `/dashboard/elearning/course/${courseId}/module/${module._id}`
+                              )
                             }
-                            className="text-left text-[#6FAEFF] hover:underline font-medium"
+                            className="flex items-center gap-3 text-sm font-medium text-gray-800 hover:text-[#1F5C9E]"
                           >
-                            {lec.title}
+                            {getIcon(module.contentType)}
+                            {module.courseModuleName}
                           </button>
 
-                          <div className="flex items-center gap-6">
-                            {lec.preview && lec.videoUrl && (
-                              <button
-                                onClick={() => {
-                                  setPreviewLecture({
-                                    title: lec.title,
-                                    videoUrl: lec.videoUrl!,
-                                  });
-                                  setPreviewOpen(true);
-                                }}
-                                className="flex items-center gap-1 text-green-600 text-xs font-medium"
-                              >
-                                <Eye size={14} /> Preview
-                              </button>
-                            )}
-
-                            <span className="text-xs text-gray-500">
-                              {lec.duration} min
-                            </span>
-                          </div>
+                          {/* RIGHT */}
+                          <span className="text-xs text-gray-500">
+                            {module.duration || ''}
+                          </span>
                         </div>
-                      ))}
-                  </div>
-                );
-              })}
-            </div>
+                      ))
+                    )}
+                  </AccordionContent>
+                </AccordionItem>
+              ))}
+            </Accordion>
           </section>
         </div>
 
         {/* ================= RIGHT ================= */}
-        <div className="bg-white rounded-2xl shadow p-6 h-fit sticky top-6">
-          <p className="text-xs text-gray-500 mb-4 text-center">
-            EDUCATIONAL GRANT BY
-          </p>
+        <div className="bg-white rounded-2xl shadow p-6 h-fit sticky top-6 text-center">
+          <p className="text-xs text-gray-500 mb-4">EDUCATIONAL GRANT BY</p>
           <Image
             src="/Sun_Pharma.png"
             alt="Sun Pharma"
@@ -202,16 +246,6 @@ export default function ElearningDetailPage() {
           />
         </div>
       </div>
-
-      {/* PREVIEW MODAL */}
-      {previewLecture && (
-        <PreviewVideoModal
-          open={previewOpen}
-          onClose={() => setPreviewOpen(false)}
-          title={previewLecture.title}
-          videoUrl={previewLecture.videoUrl}
-        />
-      )}
     </div>
-  );
+  )
 }

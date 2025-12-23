@@ -3,11 +3,9 @@
 import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Image from 'next/image'
-
-import { facultyByWebinar } from '@/app/data/webinar/faculty'
-import { faqByWebinar } from '@/app/data/webinar/faq'
-import { feedbackByWebinar } from '@/app/data/webinar/feedback'
-import { quizByWebinar, quizMetaByWebinar } from '@/app/data/webinar/quiz'
+import DOMPurify from 'dompurify'
+import { CalendarDays, Clock, CheckCircle } from 'lucide-react'
+import { toast } from 'sonner'
 
 import Overview from '@/app/components/dashboard/webinar/tabs/Overview'
 import Faculty from '@/app/components/dashboard/webinar/tabs/Faculty'
@@ -15,7 +13,8 @@ import FAQ from '@/app/components/dashboard/webinar/tabs/FAQ'
 import Feedback from '@/app/components/dashboard/webinar/tabs/Feedback'
 import Quiz from '@/app/components/dashboard/webinar/tabs/Quiz'
 
-import { CalendarDays, Clock, CheckCircle } from 'lucide-react'
+import { apiRequest } from '@/lib/apiRequest'
+import { useAuthStore } from '@/stores/authStore'
 
 /* ================= TYPES ================= */
 type TabType = 'overview' | 'faculty' | 'faq' | 'feedback' | 'quiz'
@@ -32,21 +31,26 @@ interface WebinarApi {
   description: string
 }
 
+type Comment = {
+  id: string
+  author: string
+  profile?: string
+  text: string
+  date?: string
+}
+
 export default function WebinarDetailPage() {
   const router = useRouter()
-  const params = useParams<{ id: string }>()
-  const webinarId = params.id
+  const { id: webinarId } = useParams<{ id: string }>()
+  const { user } = useAuthStore()
 
   const [tab, setTab] = useState<TabType>('overview')
   const [webinar, setWebinar] = useState<WebinarApi | null>(null)
   const [loading, setLoading] = useState(true)
 
-  const faculty = facultyByWebinar[Number(webinarId)] ?? []
-  const faq = faqByWebinar[Number(webinarId)] ?? []
-  const feedbackCfg = feedbackByWebinar[Number(webinarId)] ?? {
-    placeholder: 'Share your feedback...',
-  }
-  const quiz = quizByWebinar[Number(webinarId)] ?? []
+  const [comments, setComments] = useState<Comment[]>([])
+  const [commentText, setCommentText] = useState('')
+  const [posting, setPosting] = useState(false)
 
   /* ================= FETCH WEBINAR ================= */
   useEffect(() => {
@@ -56,9 +60,7 @@ export default function WebinarDetailPage() {
           `${process.env.NEXT_PUBLIC_API_URL}/api/webinars/active/${webinarId}`
         )
         const json = await res.json()
-        if (json.success) {
-          setWebinar(json.data)
-        }
+        if (json.success) setWebinar(json.data)
       } catch (err) {
         console.error('Failed to fetch webinar', err)
       } finally {
@@ -69,20 +71,65 @@ export default function WebinarDetailPage() {
     fetchWebinar()
   }, [webinarId])
 
-  if (loading) {
-    return <div className="p-8 text-center">Loading...</div>
+  /* ================= FETCH COMMENTS ================= */
+  const fetchComments = async () => {
+    try {
+      const res = await apiRequest<null, any>({
+        endpoint: `/api/webinars/${webinarId}/comments`,
+        method: 'GET',
+      })
+
+      const mapped: Comment[] = res.data.map((c: any) => ({
+        id: c._id,
+        author: c.userId?.name || 'Anonymous',
+        profile: c.userId?.profilePicture,
+        text: c.comment,
+        date: c.createdAt,
+      }))
+
+      setComments(mapped)
+    } catch {
+      setComments([])
+    }
   }
 
-  if (!webinar) {
-    return <div className="p-8 text-center">Webinar not found</div>
+  useEffect(() => {
+    if (webinarId) fetchComments()
+  }, [webinarId])
+
+  /* ================= POST COMMENT ================= */
+  const handleAddComment = async () => {
+    if (!commentText.trim()) return
+
+    if (!user?.id) {
+      toast.error('Please login to comment')
+      return
+    }
+
+    try {
+      setPosting(true)
+
+      await apiRequest({
+        endpoint: `/api/webinars/${webinarId}/comments`,
+        method: 'POST',
+        body: {
+          userId: user.id,
+          comment: commentText,
+        },
+      })
+
+      toast.success('Comment added successfully')
+      setCommentText('')
+      fetchComments()
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to add comment')
+    } finally {
+      setPosting(false)
+    }
   }
 
-  const questionsCount = quiz.length
-  const perQuestionSeconds =
-    quizMetaByWebinar[Number(webinarId)]?.perQuestionSeconds ?? 30
-
-  const durationMinutes =
-    Math.ceil((questionsCount * perQuestionSeconds) / 60) || 5
+  if (loading) return <div className="p-8 text-center">Loading...</div>
+  if (!webinar) return <div className="p-8 text-center">Webinar not found</div>
 
   return (
     <div className="p-8 max-w-7xl mx-auto">
@@ -180,30 +227,20 @@ export default function WebinarDetailPage() {
             <div className="mt-6">
               {tab === 'overview' && (
                 <Overview
-                  description={webinar.description}
-                  comments={[]}
-                  commentText=""
-                  setCommentText={() => {}}
-                  onAddComment={() => {}}
+                  description={DOMPurify.sanitize(webinar.description)}
+                  comments={comments}
+                  commentText={commentText}
+                  setCommentText={setCommentText}
+                  onAddComment={handleAddComment}
                 />
               )}
-              {tab === 'faculty' && <Faculty faculty={faculty} />}
-              {tab === 'faq' && <FAQ faq={faq} />}
+
+              {tab === 'faculty' && <Faculty webinarId={webinarId} />}
+              {tab === 'faq' && <FAQ faq={[]} />}
               {tab === 'feedback' && (
-                <Feedback cfg={feedbackCfg} webinarId={Number(webinarId)} />
+                <Feedback cfg={{}} webinarId={Number(webinarId)} />
               )}
-              {tab === 'quiz' && (
-                <Quiz
-                  title={webinar.name}
-                  subtitle="Subsection"
-                  durationMinutes={`${durationMinutes} Minutes`}
-                  questionsCount={questionsCount}
-                  perQuestionSeconds={perQuestionSeconds}
-                  onStart={() =>
-                    router.push(`/dashboard/webinar/${webinarId}/quiz-runner`)
-                  }
-                />
-              )}
+              {tab === 'quiz' && <Quiz title={webinar.name} />}
             </div>
           </div>
         </div>
@@ -216,10 +253,10 @@ export default function WebinarDetailPage() {
             alt="Sun Pharma"
             width={60}
             height={60}
-            className="object-contain"
           />
         </div>
       </div>
     </div>
   )
 }
+
